@@ -5,7 +5,7 @@ import time
 import random
 import os
 
-# OPTIONAL: ping endpoint (safe)
+# ================= OPTIONAL PING =================
 try:
     from ping import register_ping
 except ImportError:
@@ -37,14 +37,14 @@ cfg = {
     "delay": 12,
     "cycle": 35,
     "break": 40,
-    "threads": 3
+    "threads": 1   # keep low on Render
 }
 
 clients = []
 workers = []
 lock = threading.Lock()
 
-# ================= DEVICES (UNCHANGED) =================
+# ================= DEVICES =================
 
 DEVICES = [
     {"phone_manufacturer": "Google", "phone_model": "Pixel 8 Pro", "android_version": 15, "android_release": "15.0.0", "app_version": "323.0.0.46.109"},
@@ -69,7 +69,7 @@ def stop_all():
     clients.clear()
     workers.clear()
 
-# ================= CORE LOGIC (UNCHANGED BEHAVIOR) =================
+# ================= CORE LOGIC =================
 
 def send_message(client, thread_id, message):
     for _ in range(3):
@@ -103,17 +103,60 @@ def bomber(cl, tid, msgs):
         except Exception:
             time.sleep(20)
 
+# ================= BACKGROUND STARTER (CRITICAL FIX) =================
+
+def start_bombing():
+    msgs = [m.strip() for m in cfg["messages"].splitlines() if m.strip()]
+    tid = int(cfg["thread_id"])
+
+    with lock:
+        status["running"] = True
+        status["text"] = "RUNNING"
+        status["sent"] = 0
+        status["logs"].clear()
+
+    log("Background manager started")
+
+    for i in range(cfg["threads"]):
+        try:
+            cl = Client()
+            device = random.choice(DEVICES)
+            cl.set_device(device)
+            cl.delay_range = [8, 25]
+
+            if cfg["mode"] == "session" and cfg["sessionid"]:
+                cl.login_by_sessionid(cfg["sessionid"])
+                log(f"Thread {i+1} login OK (session)")
+            else:
+                cl.login(cfg["username"], cfg["password"])
+                log(f"Thread {i+1} login OK (user/pass)")
+
+            t = threading.Thread(
+                target=bomber,
+                args=(cl, tid, msgs),
+                daemon=True
+            )
+            t.start()
+
+            clients.append(cl)
+            workers.append(t)
+
+        except Exception as e:
+            log(f"Thread {i+1} failed: {str(e)[:80]}")
+
+    with lock:
+        status["threads"] = len(workers)
+        if not workers:
+            status["running"] = False
+            status["text"] = "ALL LOGIN FAILED"
+
 # ================= ROUTES =================
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
         stop_all()
-        time.sleep(1)
-
-        with lock:
-            status["logs"].clear()
-            status["sent"] = 0
+        time.sleep(0.5)
 
         cfg.update({
             "mode": request.form.get("mode", "username"),
@@ -125,50 +168,11 @@ def index():
             "delay": float(request.form.get("delay", 12)),
             "cycle": int(request.form.get("cycle", 35)),
             "break": int(request.form.get("break", 40)),
-            "threads": int(request.form.get("threads", 3))
+            "threads": int(request.form.get("threads", 1))
         })
 
-        msgs = [m.strip() for m in cfg["messages"].splitlines() if m.strip()]
-        tid = int(cfg["thread_id"])
-
-        with lock:
-            status["running"] = True
-            status["text"] = "RUNNING"
-
-        log("Panel started")
-
-        for i in range(cfg["threads"]):
-            try:
-                cl = Client()
-                device = random.choice(DEVICES)
-                cl.set_device(device)
-                cl.delay_range = [8, 25]
-
-                if cfg["mode"] == "session" and cfg["sessionid"]:
-                    cl.login_by_sessionid(cfg["sessionid"])
-                    log(f"Thread {i+1} login OK (session)")
-                else:
-                    cl.login(cfg["username"], cfg["password"])
-                    log(f"Thread {i+1} login OK (user/pass)")
-
-                t = threading.Thread(
-                    target=bomber,
-                    args=(cl, tid, msgs),
-                    daemon=True
-                )
-                t.start()
-
-                clients.append(cl)
-                workers.append(t)
-
-            except Exception as e:
-                log(f"Thread {i+1} failed: {str(e)[:80]}")
-
-        with lock:
-            status["threads"] = len(workers)
-            if not workers:
-                status["running"] = False
-                status["text"] = "ALL LOGIN FAILED"
+        # 🔥 START BACKGROUND WORKER (FAST RESPONSE)
+        threading.Thread(target=start_bombing, daemon=True).start()
 
     return render_template("index.html", **status, cfg=cfg)
 
