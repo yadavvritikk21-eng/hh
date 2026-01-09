@@ -88,7 +88,7 @@ def index():
             "threads": int(request.form.get('threads', 3))
         })
 
-        msgs = [m.strip() for m in cfg["messages"].split('\n') if m.strip()]
+        msgs = [cfg["messages"]]
         tid = int(cfg["thread_id"])
 
         status["running"] = True
