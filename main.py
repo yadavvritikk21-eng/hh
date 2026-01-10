@@ -20,7 +20,7 @@ cfg = {
 clients = []
 workers = []
 
-# Super undetected devices (2025 latest – no block)
+# Devices
 DEVICES = [
     {"phone_manufacturer": "Google", "phone_model": "Pixel 8 Pro", "android_version": 15, "android_release": "15.0.0", "app_version": "323.0.0.46.109"},
     {"phone_manufacturer": "Samsung", "phone_model": "SM-S928B", "android_version": 15, "android_release": "15.0.0", "app_version": "324.0.0.41.110"},
@@ -35,7 +35,7 @@ def log(msg):
         status["logs"] = status["logs"][-600:]
 
 def send_message(client, thread_id, message):
-    for _ in range(3):  # Retry 3 times for send
+    for _ in range(3):
         try:
             client.direct_send(message, thread_ids=[thread_id])
             return True
@@ -56,11 +56,11 @@ def bomber(cl, tid, msgs):
                 local_sent += 1
                 status["sent"] += 1
                 log(f"Sent #{status['sent']} → {msg[:50]}")
-            
+
             if local_sent % cfg["cycle"] == 0:
                 log(f"Break {cfg['break']}s after {cfg['cycle']} msgs")
                 time.sleep(cfg["break"])
-            
+
             time.sleep(cfg["delay"] + random.uniform(-2, 3))
         except:
             time.sleep(20)
@@ -88,7 +88,7 @@ def index():
             "threads": int(request.form.get('threads', 3))
         })
 
-        msgs = [cfg["messages"]]
+        msgs = [m.strip() for m in cfg["messages"].split('\n') if m.strip()]
         tid = int(cfg["thread_id"])
 
         status["running"] = True
@@ -99,7 +99,10 @@ def index():
             cl = Client()
             device = random.choice(DEVICES)
             cl.set_device(device)
-            cl.set_user_agent(f"Instagram {device['app_version']} Android (34/15.0.0; 480dpi; 1080x2340; {device['phone_manufacturer']}; {device['phone_model']}; raven; raven; en_US)")
+            cl.set_user_agent(
+                f"Instagram {device['app_version']} Android (34/15.0.0; 480dpi; 1080x2340; "
+                f"{device['phone_manufacturer']}; {device['phone_model']}; raven; raven; en_US)"
+            )
             cl.delay_range = [8, 25]
 
             try:
